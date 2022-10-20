@@ -1,0 +1,97 @@
+#!/bin/bash
+
+# This script will rewrite the metadata migration archive sha references
+# from old to new using the provided commit map
+
+set -e
+
+ARCHIVE=""
+COMMIT_MAP=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+  --archive)
+    ARCHIVE=$2
+    shift
+    ;;
+  --commit-map)
+    COMMIT_MAP="$2"
+    shift
+    ;;
+  -h|--help)
+    echo "gh metadata-rewrite --archive <metadata-migration-archive> --commit-map <commit-map>"
+    exit 0
+    ;;
+  esac
+  shift
+done
+
+if [ -z "$ARCHIVE" ]; then
+  echo "Please provide a metadata migration archive using the --archive flag."
+  exit 1
+fi
+
+if [ -z "$COMMIT_MAP" ]; then
+  echo "Please provide a commit map using the --commit-map flag."
+  exit 1
+fi
+
+if [ ! -f $ARCHIVE ]; then
+  echo "Cannot find metadata migration archive: $ARCHIVE"
+  exit 1
+fi
+
+if [ ! -f $COMMIT_MAP ]; then
+  echo "Cannot find commit map: $COMMIT_MAP"
+  exit 1
+fi
+
+# Reading commit map
+echo "Reading $COMMIT_MAP..."
+COUNT=1
+while IFS= read -r line
+do
+    OLD="${line%%,*}"
+    NEW="${line##*,}"
+    COMMIT_MAP_KEYS+=($OLD)
+    COMMIT_MAP_VALUES+=($NEW)
+    echo "Mapping OLD: ${COMMIT_MAP_KEYS[1]} to NEW: ${COMMIT_MAP_VALUES[1]}"
+    INDEX=$((COUNT+1))
+done < "$COMMIT_MAP"
+
+#echo "KEYS ${COMMIT_MAP_KEYS[0]}"
+#echo "VALUES ${COMMIT_MAP_VALUES[0]}"
+
+function rewrite() {
+  echo "Rewriting $1..."
+  # for each key in COMMIT_MAP_KEYS
+  echo "KEYS ${COMMIT_MAP_KEYS[0]}"
+  echo "VALUES ${COMMIT_MAP_VALUES[0]}"
+  for i in ${!COMMIT_MAP_KEYS[@]}; do
+    echo "Rewriting ${COMMIT_MAP_KEYS[$i]} to ${COMMIT_MAP_VALUES[$i]} in $1"
+    sed -i "s/${COMMIT_MAP_KEYS[$i]}/${COMMIT_MAP_VALUES[$i]}/g" $1
+  done
+}
+
+echo "Rewriting SHAs in $ARCHIVE using $COMMIT_MAP"
+
+echo "Expanding metadata migration archive..."
+mkdir ${ARCHIVE%.tar.gz}
+cd ${ARCHIVE%.tar.gz}
+tar zxf ../$ARCHIVE
+cd ..
+
+echo "Rewriting medatadata..."
+export -f rewrite
+#find ${ARCHIVE%.tar.gz} -type f -exec bash -c 'rewrite "$0"' {} \;
+for i in ${!COMMIT_MAP_KEYS[@]}; do
+    echo "Rewriting ${COMMIT_MAP_KEYS[$i]} to ${COMMIT_MAP_VALUES[$i]}"
+    #echo "find ${ARCHIVE%.tar.gz} -type f | xargs sed s/${COMMIT_MAP_KEYS[$i]}/${COMMIT_MAP_VALUES[$i]}/g"
+    find ${ARCHIVE%.tar.gz} -type f | xargs sed -i '' "s/${COMMIT_MAP_KEYS[$i]}/${COMMIT_MAP_VALUES[$i]}/g"
+  done
+
+echo "Repacking metadata migration archive..."
+cd ${ARCHIVE%.tar.gz}
+tar zcf ../${ARCHIVE%.tar.gz}-rewriten.tar.gz *
+cd ..
+#rm -rf ${ARCHIVE%.tar.gz}
